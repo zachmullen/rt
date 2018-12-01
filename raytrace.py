@@ -1,4 +1,3 @@
-# https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection
 import itertools
 import math
 import numpy as np
@@ -32,6 +31,19 @@ class PointLight(object):
 
     def __init__(self, pos):
         self.pos = pos
+
+    def getdirs(self, p):
+        return [self.pos - p]
+
+
+class DirectionalLight(object):
+    __slots__ = ['_neg_dir']
+
+    def __init__(self, dir):
+        self._neg_dir = -dir
+
+    def getdirs(self, p):
+        return [self._neg_dir]
 
 
 class Ray(object):
@@ -142,13 +154,19 @@ class Scene(object):
         # Cast a ray from current point to each light source
         for l in self.lights:
             # TODO blend multiple lights instead of just assuming we have only 1
-            ray = Ray(p, l.pos - p)
-            for actor in self.actors:
-                # Find out if we are in shadow
-                t = actor.intersect(ray)
-                if t is not None and t > EPSILON:
-                    return np.array((0, 0, 0))
-            return obj.mat.diff * obj.mat.color * obj.surface_normal(p).dot(ray.dir)
+            rays = [Ray(p, dir) for dir in l.getdirs(p)]
+            total = np.zeros([3])
+
+            for ray in rays:
+                total += self._light_or_shadow(ray, obj, p)
+            return total / float(len(rays))
+
+    def _light_or_shadow(self, ray, obj, p):  # helper for diffuse shading
+        for actor in self.actors:
+            t = actor.intersect(ray)
+            if t is not None and t > EPSILON:
+                return np.array((0, 0, 0))
+        return obj.mat.diff * obj.mat.color * obj.surface_normal(p).dot(ray.dir)
 
     def _reflect(self, obj, ray, p, ttl):
         if ttl == 0 or obj.mat.reflect <= 0:
@@ -160,11 +178,12 @@ if __name__ == '__main__':
     s1_mat = Material(np.array((255, 50, 50)), amb=0.3, diff=0.5, reflect=0.2)
     s2_mat = Material(np.array((30, 250, 120)), amb=0.3, diff=0.5, reflect=0.2)
 
-    s1 = Sphere(np.array((0, 0, -5)), 1, s1_mat)
-    s2 = Sphere(np.array((-4, 0, -5)), 2, s2_mat)
+    s1 = Sphere(np.array((0, 0, -7)), 1, s1_mat)
+    s2 = Sphere(np.array((-4, 0, -7)), 2, s2_mat)
 
-    light = PointLight(np.array((14, 0, -5)))
+    light = PointLight(np.array((14, 0, -7)))
+    # light = DirectionalLight(np.array((0, -1, 0)))
 
-    camera = Camera(hres=400, vres=300, fov=60)
+    camera = Camera(hres=400, vres=300, fov=65)
     scene = Scene(camera, [s1, s2], [light], np.array((0, 0, 0)))
     Image.fromarray(scene.render()).save('out.png')
