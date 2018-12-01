@@ -20,10 +20,7 @@ def solve_quadratic(a, b, c):
             q = -0.5 * (b - math.sqrt(discr))
         x0 = q / a
         x1 = c / q
-    if x0 > x1:
-        return x1, x0
-    else:
-        return x0, x1
+    return sorted((x0, x1))
 
 
 class PointLight(object):
@@ -33,7 +30,8 @@ class PointLight(object):
         self.pos = pos
 
     def getdirs(self, p):
-        return [self.pos - p]
+        v = self.pos - p
+        return [(v, np.linalg.norm(v))]
 
 
 class DirectionalLight(object):
@@ -43,7 +41,7 @@ class DirectionalLight(object):
         self._neg_dir = -dir
 
     def getdirs(self, p):
-        return [self._neg_dir]
+        return [(self._neg_dir, float('inf'))]
 
 
 class Ray(object):
@@ -97,6 +95,24 @@ class Sphere(object):
     def surface_normal(self, p):
         v = p - self.center
         return v / np.linalg.norm(v)
+
+
+class Plane(object):
+    def __init__(self, p, normal, mat):
+        self.p = p
+        self.normal = normal / np.linalg.norm(normal)
+        self.mat = mat
+
+    def intersect(self, ray):
+        num = (self.p - ray.orig).dot(self.normal)
+        denom = ray.dir.dot(self.normal)
+        if abs(denom) < EPSILON:
+            return None
+        t = num / denom
+        return None if t < 0 else t
+
+    def surface_normal(self, p):
+        return self.normal
 
 
 class Camera(object):
@@ -154,17 +170,17 @@ class Scene(object):
         # Cast a ray from current point to each light source
         for l in self.lights:
             # TODO blend multiple lights instead of just assuming we have only 1
-            rays = [Ray(p, dir) for dir in l.getdirs(p)]
+            light_rays = [(Ray(p, dir), t) for dir, t in l.getdirs(p)]
             total = np.zeros([3])
 
-            for ray in rays:
-                total += self._light_or_shadow(ray, obj, p)
-            return total / float(len(rays))
+            for ray, t in light_rays:
+                total += self._light_or_shadow(ray, obj, p, t)
+            return total / float(len(light_rays))
 
-    def _light_or_shadow(self, ray, obj, p):  # helper for diffuse shading
+    def _light_or_shadow(self, ray, obj, p, light_t):  # helper for diffuse shading
         for actor in self.actors:
             t = actor.intersect(ray)
-            if t is not None and t > EPSILON:
+            if t is not None and t > EPSILON and t < light_t:
                 return np.array((0, 0, 0))
         return obj.mat.diff * obj.mat.color * obj.surface_normal(p).dot(ray.dir)
 
@@ -177,13 +193,15 @@ class Scene(object):
 if __name__ == '__main__':
     s1_mat = Material(np.array((255, 50, 50)), amb=0.3, diff=0.5, reflect=0.2)
     s2_mat = Material(np.array((30, 250, 120)), amb=0.3, diff=0.5, reflect=0.2)
+    floor_mat = Material(np.array((150, 150, 240)), amb=0.3, diff=0.5, reflect=0.2)
 
-    s1 = Sphere(np.array((0, 0, -7)), 1, s1_mat)
-    s2 = Sphere(np.array((-4, 0, -7)), 2, s2_mat)
+    s1 = Sphere(np.array((0, -1, -6)), 1, s1_mat)
+    s2 = Sphere(np.array((-4, 0, -8)), 2, s2_mat)
+    floor = Plane(np.array((0, -2, 0)), np.array((0, 1, 0)), floor_mat)
 
-    light = PointLight(np.array((14, 0, -7)))
+    light = PointLight(np.array((14, 0, -4)))
     # light = DirectionalLight(np.array((0, -1, 0)))
 
     camera = Camera(hres=400, vres=300, fov=65)
-    scene = Scene(camera, [s1, s2], [light], np.array((0, 0, 0)))
+    scene = Scene(camera, [s1, s2, floor], [light], np.array((0, 0, 0)))
     Image.fromarray(scene.render()).save('out.png')
