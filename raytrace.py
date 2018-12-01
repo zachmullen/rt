@@ -24,24 +24,28 @@ def solve_quadratic(a, b, c):
 
 
 class PointLight(object):
-    __slots__ = ['pos']
+    __slots__ = ['pos', 'intensity']
 
-    def __init__(self, pos):
+    def __init__(self, pos, intensity):
         self.pos = pos
+        self.intensity = intensity
 
     def getdirs(self, p):
         v = self.pos - p
-        return [(v, np.linalg.norm(v))]
+        l = np.linalg.norm(v)
+        i = min(self.intensity / (math.pi * 4 * l * l), 1.)
+        return [(v, l, i)]
 
 
 class DirectionalLight(object):
-    __slots__ = ['_neg_dir']
+    __slots__ = ['_neg_dir', 'intensity']
 
-    def __init__(self, dir):
+    def __init__(self, dir, intensity):
         self._neg_dir = -dir
+        self.intensity = intensity
 
     def getdirs(self, p):
-        return [(self._neg_dir, float('inf'))]
+        return [(self._neg_dir, float('inf'), self.intensity)]
 
 
 class Ray(object):
@@ -172,11 +176,11 @@ class Scene(object):
         # Cast a ray from current point to each light source
         for l in self.lights:
             # TODO blend multiple lights instead of just assuming we have only 1
-            light_rays = [(Ray(p, dir), t) for dir, t in l.getdirs(p)]
+            light_rays = [(Ray(p, dir), t, i) for dir, t, i in l.getdirs(p)]
             total = np.zeros([3])
 
-            for ray, t in light_rays:
-                total += self._light_or_shadow(ray, obj, p, t)
+            for ray, t, i in light_rays:
+                total += i * self._light_or_shadow(ray, obj, p, t)
             return total / float(len(light_rays))
 
     def _light_or_shadow(self, ray, obj, p, light_t):  # helper for diffuse shading
@@ -196,19 +200,24 @@ class Scene(object):
 
 
 if __name__ == '__main__':
-    s1_mat = Material(np.array((255, 50, 50)), amb=0.3, diff=0.5, reflect=0.2)
-    s2_mat = Material(np.array((30, 250, 120)), amb=0.3, diff=0.5, reflect=0.2)
-    s3_mat = Material(np.array((20, 20, 255)), amb=0.1, diff=0.2, reflect=0.5)
+    s1_mat = Material(np.array((255, 50, 50)), amb=0.2, diff=0.5, reflect=0.3)
+    s2_mat = Material(np.array((30, 250, 120)), amb=0.2, diff=0.5, reflect=0.3)
+    s3_mat = Material(np.array((20, 20, 255)), amb=0.1, diff=0.2, reflect=0.7)
     floor_mat = Material(np.array((150, 150, 240)), amb=0.2, diff=0.5, reflect=0.3)
 
     s1 = Sphere(np.array((0, -1, -6)), 1, s1_mat)
-    s2 = Sphere(np.array((-4, 0, -8)), 2, s2_mat)
+    s2 = Sphere(np.array((-4, 0.4, -8)), 2, s2_mat)
     s3 = Sphere(np.array((4, 2, -10)), 2.5, s3_mat)
     floor = Plane(np.array((0, -2, 0)), np.array((0, 1, 0)), floor_mat)
 
-    light = PointLight(np.array((14, 0, -4)))
+    light = PointLight(np.array((0, 0, 0)), 600)
     # light = DirectionalLight(np.array((0, -1, 0)))
 
-    camera = Camera(hres=640, vres=480, fov=65)
+    camera = Camera(hres=700, vres=500, fov=65)
     scene = Scene(camera, [s1, s2, s3, floor], [light], np.array((0, 0, 0)))
     Image.fromarray(scene.render()).save('out.png')
+
+    # Next up:
+    # 1. Light color
+    # 2. Refraction
+    # 3. Textures
