@@ -1,10 +1,21 @@
 import itertools
 import math
+import multiprocessing
 import numpy as np
 from PIL import Image
 
+CHUNK_SIZE = 50  # scanlines
 MAX_BOUNCES = 3
 EPSILON = 1e-8
+
+
+def render_block(block):  # multiprocess pool target, cannot be an instance method
+    start, stop, scene = block
+    length = stop - start
+    img = np.empty((length, scene.camera.hres, 3), dtype=np.uint8)
+    for i, j in itertools.product(range(scene.camera.hres), range(length)):
+        img[j, i] = np.minimum(scene._color(scene.camera.cast(i, j+start)).astype(np.uint8), 255)
+    return img
 
 
 def solve_quadratic(a, b, c):
@@ -171,10 +182,11 @@ class Scene(object):
 
     def render(self):
         # returns a numpy array, the raytraced 2D image
-        img = np.empty((self.camera.vres, self.camera.hres, 3), dtype=np.uint8)
-        for i, j in itertools.product(range(self.camera.hres), range(self.camera.vres)):
-            img[j, i] = np.minimum(self._color(self.camera.cast(i, j)).astype(np.uint8), 255)
-        return img
+        pool = multiprocessing.Pool()
+        chunks = range(0, self.camera.vres, CHUNK_SIZE)
+        blocks = [(i, min(i+CHUNK_SIZE, self.camera.vres), self) for i in chunks]
+        rows = pool.map(render_block, blocks)
+        return np.concatenate(rows)
 
     def _color(self, ray, ttl=MAX_BOUNCES):
         obj = None
@@ -254,13 +266,12 @@ if __name__ == '__main__':
     light = PointLight(np.array((0, 0, -2.5)), 700)
     # light = DirectionalLight(np.array((0, -1, 0)))
 
-    camera = Camera(hres=700, vres=500, fov=65)
+    camera = Camera(hres=1024, vres=768, fov=65)
     scene = Scene(camera, [s1, s2, s3, s4, floor], [light], np.array((0, 0, 0)))
     Image.fromarray(scene.render()).save('out.png')
 
     # Next up:
     # . Specular light
-    # . Multiprocessing
     # . Area light (disk? plane? buncha points?)
     # . Light color
     # . Textures
