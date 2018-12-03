@@ -112,6 +112,8 @@ class Material(object):
 
 
 class Sphere(Shape):
+    __slots__ = ['center', 'r_sq', 'mat']
+
     def __init__(self, center, r, mat):
         self.center = center
         self.r_sq = r * r
@@ -252,25 +254,29 @@ class Scene(object):
 if __name__ == '__main__':
     s1_mat = Material(np.array((255, 50, 50)), amb=0.2, diff=0.5, reflect=0.3)
     s2_mat = Material(np.array((30, 250, 120)), amb=0.2, diff=0.5, reflect=0.3)
-    s3_mat = Material(np.array((20, 20, 255)), amb=0.1, diff=0.2, reflect=0.7)
+    s3_mat = Material(np.array((255, 255, 255)), amb=0.1, diff=0.3, reflect=0.7)
     s4_mat = Material(
-        np.array((255, 255, 255)), amb=0, diff=0.1, reflect=0.25, refract=0.9, r_index=1.1)
+        np.array((255, 255, 255)), amb=0, diff=0, reflect=.15, refract=.9, r_index=1.3)
+    s5_mat = Material(np.array((50, 50, 255)), amb=.2, diff=.8, reflect=0)
+
     floor_mat = Material(np.array((150, 150, 240)), amb=0.2, diff=0.5, reflect=0.3)
 
     s1 = Sphere(np.array((0, -1, -6)), 1, s1_mat)
     s2 = Sphere(np.array((-4, 0.4, -8)), 2, s2_mat)
     s3 = Sphere(np.array((4, 2, -10)), 2.5, s3_mat)
     s4 = Sphere(np.array((-1, -1, -4)), 0.8, s4_mat)
+    s5 = Sphere(np.array((1.8, -1.6, -4)), 0.4, s5_mat)
     floor = Plane(np.array((0, -2, 0)), np.array((0, 1, 0)), floor_mat)
 
     light = PointLight(np.array((0, 0, -2.5)), 700)
     # light = DirectionalLight(np.array((0, -1, 0)))
 
     camera = Camera(hres=1024, vres=768, fov=65)
-    scene = Scene(camera, [s1, s2, s3, s4, floor], [light], np.array((0, 0, 0)))
+    scene = Scene(camera, [s1, s2, s3, s4, s5, floor], [light], np.array((0, 0, 0)))
     Image.fromarray(scene.render()).save('out.png')
 
     # Next up:
+    # . Multiple lights
     # . Specular light
     # . Area light (disk? plane? buncha points?)
     # . Light color
