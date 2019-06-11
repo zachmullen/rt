@@ -341,19 +341,38 @@ func (scene Scene) LightOrShadow(ray Ray, obj Shape, p Vec3, lightT float64) Vec
 	return obj.Material().Color.Scale(obj.SurfaceNormal(p).Dot(ray.Dir)).Scale(obj.Material().Diffuse)
 }
 
+type ScanLine struct {
+	I      int
+	Pixels []color.NRGBA
+}
+
 func (scene Scene) Render() image.Image {
+	ch := make(chan ScanLine, 20)
+	for i := 0; i < scene.Camera.HRes; i++ {
+		go RenderScanLine(ch, i, scene)
+	}
+
 	img := image.NewRGBA(image.Rect(0, 0, scene.Camera.HRes, scene.Camera.VRes))
 	for i := 0; i < scene.Camera.HRes; i++ {
-		for j := 0; j < scene.Camera.VRes; j++ {
-			colorVec := scene.color(scene.Camera.Cast(i, j), MAX_BOUNCES)
-			img.Set(i, j, color.NRGBA{
-				ClampByte(colorVec.X),
-				ClampByte(colorVec.Y),
-				ClampByte(colorVec.Z),
-				255})
+		line := <-ch
+		for y, px := range line.Pixels {
+			img.Set(line.I, y, px)
 		}
 	}
 	return img
+}
+
+func RenderScanLine(ch chan ScanLine, i int, scene Scene) {
+	line := make([]color.NRGBA, scene.Camera.VRes)
+	for j := 0; j < scene.Camera.VRes; j++ {
+		colorVec := scene.color(scene.Camera.Cast(i, j), MAX_BOUNCES)
+		line[j] = color.NRGBA{
+			ClampByte(colorVec.X),
+			ClampByte(colorVec.Y),
+			ClampByte(colorVec.Z),
+			255}
+	}
+	ch <- ScanLine{i, line}
 }
 
 func main() {
