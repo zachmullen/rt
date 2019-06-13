@@ -87,6 +87,7 @@ type Shape interface {
 	SurfaceNormal(point Vec3) Vec3
 	Intersect(ray Ray) float64
 	Material() Material
+	Color(p Vec3) Vec3
 }
 
 type Vec3 struct {
@@ -150,10 +151,6 @@ func (sphere Sphere) Refract(ray Ray, p Vec3) (Ray, bool) {
 	return Ray{p.Plus(refractDir.Scale(EPSILON)), refractDir}, true
 }
 
-func (plane Plane) Refract(ray Ray, p Vec3) (Ray, bool) {
-	return Ray{}, false
-}
-
 func (light *PointLight) GetDirs(point Vec3) []LightDir {
 	v := light.Pos.Minus(point)
 	l := v.Len()
@@ -174,6 +171,10 @@ type Sphere struct {
 	Center   Vec3
 	RSquared float64
 	Mat      Material
+}
+
+func (sphere Sphere) Color(p Vec3) Vec3 {
+	return sphere.Mat.Color
 }
 
 func (sphere Sphere) Intersect(ray Ray) float64 {
@@ -210,9 +211,28 @@ func (sphere Sphere) Material() Material {
 }
 
 type Plane struct {
-	Point  Vec3
-	Normal Vec3
-	Mat    Material
+	Point        Vec3
+	Normal       Vec3
+	Mat          Material
+	Mat2         Material
+	Checkerboard bool
+}
+
+func (plane Plane) Refract(ray Ray, p Vec3) (Ray, bool) {
+	return Ray{}, false
+}
+
+func (plane Plane) Color(p Vec3) Vec3 {
+	// hack for plane checkerboard... just XZ axis-aligned for now
+	if plane.Checkerboard {
+		if (int(math.Floor(p.X))+int(math.Floor(p.Z)))%2 == 0 {
+			return plane.Mat.Color
+		} else {
+			return plane.Mat2.Color
+		}
+	} else {
+		return plane.Mat.Color
+	}
 }
 
 func (plane Plane) Intersect(ray Ray) float64 {
@@ -284,7 +304,7 @@ func (scene Scene) color(ray Ray, ttl uint8) Vec3 {
 		actor := scene.Actors[idx]
 		p := ray.Orig.Plus(ray.Dir.Scale(minT))
 		return SumVec3(
-			actor.Material().Color.Scale(actor.Material().Ambient),
+			actor.Color(p).Scale(actor.Material().Ambient),
 			scene.Diffuse(actor, p),
 			scene.Reflect(actor, ray, p, ttl),
 			scene.Refract(actor, ray, p, ttl))
@@ -338,7 +358,7 @@ func (scene Scene) LightOrShadow(ray Ray, obj Shape, p Vec3, lightT float64) Vec
 			return Vec3{}
 		}
 	}
-	return obj.Material().Color.Scale(obj.SurfaceNormal(p).Dot(ray.Dir)).Scale(obj.Material().Diffuse)
+	return obj.Color(p).Scale(obj.SurfaceNormal(p).Dot(ray.Dir)).Scale(obj.Material().Diffuse)
 }
 
 type ScanLine struct {
@@ -379,18 +399,19 @@ func main() {
 	s1Mat := Material{Vec3{255, 50, 50}, 0.3, 0.3, 0.3, 0, 0}
 	s2Mat := Material{Vec3{30, 250, 120}, 0.2, 0.5, 0.3, 0, 0}
 	s3Mat := Material{Vec3{20, 20, 255}, 0.1, 0.2, 0.7, 0, 0}
-	s4Mat := Material{Vec3{255, 255, 255}, 0, .1, .25, .9, 1.18}
-	floorMat := Material{Vec3{150, 150, 240}, 0.3, 0.4, 0.3, 0, 0}
+	s4Mat := Material{Vec3{255, 255, 255}, 0, .1, .2, .9, 1.15}
+	floorMat := Material{Vec3{150, 150, 240}, 0.3, 0.5, 0.4, 0, 0}
+	floorMat2 := Material{Vec3{30, 30, 30}, 0.3, 0.4, 0.3, 0, 0}
 
-	s1 := Sphere{Vec3{0., 0., -6}, 1.4, s1Mat}
-	s2 := Sphere{Vec3{-4, 0.4, -8}, 2, s2Mat}
-	s3 := Sphere{Vec3{4, 2, -10}, 2.5, s3Mat}
-	s4 := Sphere{Vec3{-.2, -1, -4}, 0.8, s4Mat}
-	floor := Plane{Vec3{0, -2, 0}, Vec3{0, 1, 0}, floorMat}
-	light := PointLight{Vec3{0, 0, -2.5}, 700.}
+	s1 := Sphere{Vec3{0., 0., -7}, 1.4, s1Mat}
+	s2 := Sphere{Vec3{-4, 0.4, -9}, 2, s2Mat}
+	s3 := Sphere{Vec3{3.3, -.4, -8}, 2.5, s3Mat}
+	s4 := Sphere{Vec3{-.35, -1, -5}, 0.7, s4Mat}
+	floor := Plane{Vec3{0, -2, 0}, Vec3{0, 1, 0}, floorMat, floorMat2, true}
+	light := PointLight{Vec3{0, 2, -2.5}, 600.}
 
-	camera := NewCamera(1024, 768, 65.)
-	scene := Scene{camera, []Shape{floor, s1, s2, s3, s4}, []PointLight{light}, Vec3{30, 30, 30}}
+	camera := NewCamera(1024, 768, 56.)
+	scene := Scene{camera, []Shape{floor, s1, s2, s3, s4}, []PointLight{light}, Vec3{165, 165, 178}}
 	writer, err := os.Create("out.png")
 	if err == nil {
 		png.Encode(writer, scene.Render())
