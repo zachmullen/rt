@@ -67,10 +67,42 @@ struct Material {
 }
 
 trait Shape {
-    fn surface_normal(&self, point: XYZ) -> XYZ;
-    fn intersect(&self, ray: &Ray) -> Option<f64>;
-    fn ambient_color(&self, p: XYZ) -> Rgb<u8>;
-    fn material(&self, p: XYZ) -> Material;
+    fn surface_normal(&self, point: XYZ) -> XYZ; // normal at point
+    fn intersect(&self, ray: &Ray) -> Option<f64>; // parametric intersection
+    fn material(&self, point: XYZ) -> Material; // material at point
+}
+
+struct Checkerboard {
+    point: XYZ,
+    normal: XYZ,
+    mat1: Material,
+    mat2: Material,
+}
+
+impl Shape for Checkerboard {
+    fn surface_normal(&self, _point: XYZ) -> XYZ {
+        self.normal
+    }
+
+    fn intersect(&self, ray: &Ray) -> Option<f64> {
+        let num = (self.point - ray.orig).dot(self.normal);
+        let denom = ray.dir.dot(self.normal);
+        if denom.abs() < EPSILON {
+            return None;
+        }
+        match num / denom {
+            t if t < 0. => None,
+            t => Some(t),
+        }
+    }
+
+    fn material(&self, point: XYZ) -> Material {
+        let switch = point.x.floor() as i32 + point.z.floor() as i32;
+        match switch {
+            i if i % 2 == 0 => self.mat1,
+            _ => self.mat2,
+        }
+    }
 }
 
 struct Sphere {
@@ -110,10 +142,6 @@ impl Shape for Sphere {
             }
         }
         Some(t0)
-    }
-
-    fn ambient_color(&self, _point: XYZ) -> Rgb<u8> {
-        scale_color(self.mat.color, self.mat.ambient)
     }
 
     fn material(&self, _point: XYZ) -> Material {
@@ -225,7 +253,10 @@ impl Scene {
                 let intersection_point = (ray.dir * min_t) + ray.orig;
                 let actor = &self.actors[i];
                 sum_rgb(&[
-                    actor.ambient_color(intersection_point),
+                    scale_color(
+                        actor.material(intersection_point).color,
+                        actor.material(intersection_point).ambient,
+                    ),
                     self.diffuse(actor, intersection_point),
                     self.reflect(actor, ray, intersection_point, ttl),
                 ])
@@ -314,7 +345,6 @@ impl Camera {
         img
     }
 
-    // Compute the ray from the camera at the given pixel coords
     fn cast(&self, x: u32, y: u32) -> Ray {
         let px = (2. * (((x as f64) + 0.5) / (self.hres as f64)) - 1.) * self.tanterm * self.ar;
         let py = (1. - 2. * (((y as f64) + 0.5) / (self.vres as f64))) * self.tanterm;
@@ -335,7 +365,7 @@ impl Camera {
 }
 
 fn main() -> Result<(), image::ImageError> {
-    let camera = Camera::new(300, 200, 60.);
+    let camera = Camera::new(1000, 600, 60.);
     let mut actors: Vec<Box<dyn Shape>> = Vec::new();
     actors.push(Box::new(Sphere {
         center: XYZ {
@@ -355,10 +385,10 @@ fn main() -> Result<(), image::ImageError> {
     actors.push(Box::new(Sphere {
         center: XYZ {
             x: -2.,
-            y: -2.,
-            z: -3.,
+            y: 5.8,
+            z: -11.,
         },
-        r_sq: 2.1,
+        r_sq: 40.,
         mat: Material {
             color: Rgb([20, 200, 100]),
             diffuse: 0.5,
@@ -367,8 +397,33 @@ fn main() -> Result<(), image::ImageError> {
         },
     }));
 
+    actors.push(Box::new(Checkerboard {
+        point: XYZ {
+            x: 0.,
+            y: -2.,
+            z: 0.,
+        },
+        normal: XYZ {
+            x: 0.,
+            y: 1.,
+            z: 0.,
+        },
+        mat1: Material {
+            color: Rgb([150, 150, 240]),
+            diffuse: 0.5,
+            ambient: 0.2,
+            reflect: 0.4,
+        },
+        mat2: Material {
+            color: Rgb([30, 30, 30]),
+            diffuse: 0.4,
+            ambient: 0.3,
+            reflect: 0.3,
+        },
+    }));
+
     let img = camera.render(&Scene {
-        bg: Rgb([0, 50, 50]),
+        bg: Rgb([0, 50, 130]),
         actors: actors,
         lights: vec![PointLight {
             pos: XYZ {
@@ -376,7 +431,7 @@ fn main() -> Result<(), image::ImageError> {
                 y: 5.,
                 z: 0.,
             },
-            intensity: 600.,
+            intensity: 1700.,
         }],
     });
     img.save("rust.png")?;
