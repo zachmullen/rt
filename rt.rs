@@ -2,7 +2,7 @@ use image::{Rgb, RgbImage};
 use std::f64::consts::PI;
 use std::ops::{Add, Mul, Sub};
 
-const EPSILON: f64 = 1e-8;
+const EPSILON: f64 = 1e-6;
 const MAX_HOPS: u8 = 5;
 
 fn solve_quadratic(a: f64, b: f64, c: f64) -> (f64, f64) {
@@ -26,6 +26,20 @@ fn solve_quadratic(a: f64, b: f64, c: f64) -> (f64, f64) {
         (x0, x1) if x0 < x1 => (x0, x1),
         _ => (x1, x0),
     }
+}
+
+fn sum_rgb(vals: &[Rgb<u8>]) -> Rgb<u8> {
+    let mut sum: XYZ = XYZ {
+        x: 0.,
+        y: 0.,
+        z: 0.,
+    };
+    for val in vals {
+        sum.x += val[0] as f64;
+        sum.y += val[1] as f64;
+        sum.z += val[2] as f64;
+    }
+    Rgb([clamp_byte(sum.x), clamp_byte(sum.y), clamp_byte(sum.z)])
 }
 
 fn clamp_byte(v: f64) -> u8 {
@@ -169,6 +183,12 @@ struct Ray {
     dir: XYZ,
 }
 
+struct PointLight {
+    pos: XYZ,
+    intensity: f64,
+    // TODO color
+}
+
 struct Camera {
     hres: u32,
     vres: u32,
@@ -179,6 +199,7 @@ struct Camera {
 struct Scene {
     bg: Rgb<u8>,
     actors: Vec<Box<dyn Shape>>,
+    lights: Vec<PointLight>,
 }
 
 impl Scene {
@@ -203,10 +224,55 @@ impl Scene {
             Some(i) => {
                 let intersection_point = (ray.dir * min_t) + ray.orig;
                 let actor = &self.actors[i];
-                actor.ambient_color(intersection_point)
+                sum_rgb(&[
+                    actor.ambient_color(intersection_point),
+                    self.diffuse(actor, intersection_point),
+                ])
             }
             None => self.bg,
         }
+    }
+
+    fn diffuse(&self, actor: &Box<dyn Shape>, point: XYZ) -> Rgb<u8> {
+        for light in self.lights.iter() {
+            // TODO right now this only supports one light (breaks on first iteration)
+            let light_dir = light.pos - point;
+            let len = light_dir.len();
+            let mut intensity = light.intensity / (len * len * PI * 4.);
+            if intensity > 1. {
+                intensity = 1.;
+            }
+            let ray: Ray = Ray {
+                orig: point,
+                dir: light_dir.norm(),
+            };
+            let light_or_shadow = self.light_or_shadow(&ray, actor, point, len);
+            return scale_color(light_or_shadow, intensity);
+        }
+        self.bg
+    }
+
+    fn light_or_shadow(
+        &self,
+        ray: &Ray,
+        obj: &Box<dyn Shape>,
+        point: XYZ,
+        light_t: f64,
+    ) -> Rgb<u8> {
+        for actor in self.actors.iter() {
+            let intersection_t = actor.intersect(ray);
+            match intersection_t {
+                Some(t) if t > EPSILON && t < light_t => return Rgb([0, 0, 0]),
+                _ => {
+                    continue;
+                }
+            }
+        }
+        let mat = obj.material(point);
+        scale_color(
+            mat.color,
+            mat.diffuse * obj.surface_normal(point).dot(ray.dir),
+        )
     }
 }
 
@@ -252,7 +318,7 @@ impl Camera {
 }
 
 fn main() -> Result<(), image::ImageError> {
-    let camera = Camera::new(100, 100, 60.);
+    let camera = Camera::new(300, 200, 60.);
     let mut actors: Vec<Box<dyn Shape>> = Vec::new();
     actors.push(Box::new(Sphere {
         center: XYZ {
@@ -263,8 +329,8 @@ fn main() -> Result<(), image::ImageError> {
         r_sq: 1.,
         mat: Material {
             color: Rgb([255, 0, 0]),
-            diffuse: 1.,
-            ambient: 1.,
+            diffuse: 0.8,
+            ambient: 0.2,
             reflect: 1.,
         },
     }));
@@ -272,6 +338,14 @@ fn main() -> Result<(), image::ImageError> {
     let img = camera.render(&Scene {
         bg: Rgb([0, 50, 50]),
         actors: actors,
+        lights: vec![PointLight {
+            pos: XYZ {
+                x: 5.,
+                y: 5.,
+                z: 0.,
+            },
+            intensity: 600.,
+        }],
     });
     img.save("rust.png")?;
 
