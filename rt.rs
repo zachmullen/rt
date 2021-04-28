@@ -227,10 +227,27 @@ impl Scene {
                 sum_rgb(&[
                     actor.ambient_color(intersection_point),
                     self.diffuse(actor, intersection_point),
+                    self.reflect(actor, ray, intersection_point, ttl),
                 ])
             }
             None => self.bg,
         }
+    }
+
+    fn reflect(&self, actor: &Box<dyn Shape>, ray: &Ray, point: XYZ, ttl: u8) -> Rgb<u8> {
+        if ttl == 0 || actor.material(point).reflect <= 0. {
+            return Rgb([0, 0, 0]);
+        }
+        let n = actor.surface_normal(point);
+        let reflect_dir = (ray.dir - (n * 2. * ray.dir.dot(n))).norm();
+        let reflect_ray: Ray = Ray {
+            orig: reflect_dir * EPSILON + point,
+            dir: reflect_dir,
+        };
+        scale_color(
+            self.compute_color(&reflect_ray, ttl - 1),
+            actor.material(point).reflect,
+        )
     }
 
     fn diffuse(&self, actor: &Box<dyn Shape>, point: XYZ) -> Rgb<u8> {
@@ -328,10 +345,25 @@ fn main() -> Result<(), image::ImageError> {
         },
         r_sq: 1.,
         mat: Material {
-            color: Rgb([255, 0, 0]),
-            diffuse: 0.8,
+            color: Rgb([255, 40, 40]),
+            diffuse: 0.3,
             ambient: 0.2,
-            reflect: 1.,
+            reflect: 0.5,
+        },
+    }));
+
+    actors.push(Box::new(Sphere {
+        center: XYZ {
+            x: -2.,
+            y: -2.,
+            z: -3.,
+        },
+        r_sq: 2.1,
+        mat: Material {
+            color: Rgb([20, 200, 100]),
+            diffuse: 0.5,
+            ambient: 0.2,
+            reflect: 0.3,
         },
     }));
 
